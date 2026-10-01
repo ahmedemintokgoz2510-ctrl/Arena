@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- game.html = OYUN EKRANI (tahta / bilgisayar, 16:9): ders secimi -> lobi -> 2.5D arena. Mantik: game.js, tasarim: style.css -->
+<!-- game.html = OYUN EKRANI (tahta / bilgisayar, 16:9). Mantik: game.js, tasarim: style.css -->
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
@@ -9,61 +9,66 @@
 </head>
 <body class="board-page">
   <div class="board">
-    <div class="stage">
-      <div class="status bad" id="status">● BAĞLANTI BEKLENİYOR</div>
-
-      <!-- 1) DERS SECIMI -->
-      <section class="screen setup hidden" id="setup">
-        <div class="logo">SINIF ARENASI</div>
-        <div class="lead">DERSİNİ SEÇ</div>
-        <div class="cards" id="cards"></div>
-        <button class="btn go" id="openLobby" disabled>LOBİYİ AÇ</button>
-      </section>
-
-      <!-- 2) LOBI -->
-      <section class="screen lobby hidden" id="lobby">
-        <div class="card lobby-left">
-          <div class="logo small">SINIF ARENASI</div>
-          <div class="subj" id="lobbySubject"></div>
-          <button class="link" id="changeSubject">DERSİ DEĞİŞTİR</button>
-          <h2 id="lobbyCount">OYUNCULAR 0/20</h2>
-          <ul class="plist" id="plist"></ul>
+    <div class="stage" id="stage" data-phase="lobby">
+      <header class="topbar">
+        <div class="brand">
+          <div class="title">SINIF ARENASI</div>
+          <div class="info"><span class="status bad" id="status">● BAĞLANTI BEKLENİYOR</span><span class="counter" id="counter">OYUNCULAR: 0/20</span></div>
         </div>
-        <div class="card lobby-right">
-          <div class="join-title">TELEFONUNLA QR KODU OKUT</div>
+        <div class="subject-chip hidden" id="subjectChip"></div>
+        <div class="timer hidden" id="timer">15</div>
+        <div class="join-panel" id="joinPanel">
           <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
-          <div class="join-sub">Sonra ismini girerek oyuna katıl.</div>
-          <div class="join-url" id="joinUrl"></div>
-          <button class="btn go" id="startBtn" disabled>OYUNCU BEKLENİYOR...</button>
+          <p class="join-title">TELEFONUNLA QR KODU OKUT</p>
+          <p class="join-sub">Sonra ismini girerek oyuna katıl.</p>
+          <p class="join-url" id="joinUrl"></p>
         </div>
+      </header>
+
+      <!-- Soru kartı (oyun sırasında) -->
+      <section class="qcard" id="qcard">
+        <div class="qmeta" id="qmeta"></div>
+        <div class="qtext" id="qtext"></div>
+        <div class="qbar"><i id="qbar"></i></div>
       </section>
 
-      <!-- 3) OYUN: soru HUD + 2.5D arena -->
-      <section class="screen game hidden" id="game">
-        <header class="strip">
-          <span class="title">SINIF ARENASI</span>
-          <span class="counter" id="counter">OYUNCULAR: 0/20</span>
-        </header>
-        <div class="qhud">
-          <div class="qmeta" id="qmeta"></div>
-          <div class="qtext" id="qtext"></div>
-          <div class="timer" id="timer"></div>
-        </div>
-        <div class="arena">
-          <div class="plane" id="plane">
-            <!-- Zemin perspektifle yatirilir; A/B/C/D bolgeleri zemine boyanmistir -->
-            <div class="floor" id="floor">
-              <div class="zone a"><b>A</b><span></span></div>
-              <div class="zone b"><b>B</b><span></span></div>
-              <div class="zone c"><b>C</b><span></span></div>
-              <div class="zone d"><b>D</b><span></span></div>
-            </div>
-            <div class="chars" id="world"></div>
+      <!-- Lobi kartı (oyun başlamadan önce): ders, oyuncular, QR, başlat -->
+      <section class="lobby" id="lobby">
+        <div class="lobby-main">
+          <div class="lobby-subject" id="lobbySubject"></div>
+          <div class="lobby-label" id="lobbyCount">OYUNCULAR 0/20</div>
+          <div class="chips" id="chips"></div>
+          <div class="lobby-actions">
+            <button class="btn start" id="startBtn" disabled>OYUNU BAŞLAT</button>
+            <button class="btn ghost" id="changeBtn">DERSİ DEĞİŞTİR</button>
           </div>
         </div>
+        <div class="lobby-qr">
+          <div class="qr-box" id="qrBox2" aria-label="Katılım QR kodu"></div>
+          <p>Telefonunla QR kodu okut</p>
+        </div>
       </section>
+
+      <div class="arena" id="field">
+        <div class="world" id="world">
+          <svg class="floor" id="floor" aria-hidden="true"></svg>
+          <div class="zlabel a" data-z="A"><b>A</b><span></span><em></em></div>
+          <div class="zlabel b" data-z="B"><b>B</b><span></span><em></em></div>
+          <div class="zlabel c" data-z="C"><b>C</b><span></span><em></em></div>
+          <div class="zlabel d" data-z="D"><b>D</b><span></span><em></em></div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- Ders seçimi -->
+  <div class="overlay hidden" id="picker">
+    <div class="picker-card">
+      <div class="picker-title">DERSİNİ SEÇ</div>
+      <div class="subjects" id="subjects"></div>
+    </div>
+  </div>
+
   <div class="overlay hidden" id="winnerBox">
     <div class="win-card">
       <div class="win-title">🏆 KAZANAN</div>

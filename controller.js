@@ -10,11 +10,11 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
   const $join = $('joinView'), $conn = $('connectedView'), $input = $('nameInput'), $btn = $('joinBtn');
   const $err = $('err'), $name = $('playerName'), $zone = $('stickZone'), $stick = $('stick'), $knob = $('knob');
   const $connJoin = $('connJoin'), $hudMid = $('hudMid'), $hearts = $('hearts'), $score = $('score');
-  const $count = $('count'), $msg = $('msg'), $pick = $('pick');
+  const $count = $('count'), $msg = $('msg'), $zoneBox = $('zoneBox'), $zoneLetter = $('zoneLetter'), $findBtn = $('findBtn'), $dot = $('colorDot');
 
   let joined = false, lastName = '', myId = '';
-  const me = { lives: 3, score: 0, alive: true, waiting: false, last: null }; // sunucudan gelen kopya
-  let phase = 'setup', winner = null, deadline = 0, subject = null, zone = '';
+  const me = { lives: 3, score: 0, alive: true, waiting: false, last: null, zone: '' }; // sunucudan gelen kopya (zone sadece gosterim)
+  let phase = 'lobby', winner = null, deadline = 0;
 
   // Telefonun kalici kimligi (sekme basina): yeniden baglaninca ayni oyuncu taninir
   let clientKey = '';
@@ -30,7 +30,7 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     $conn.classList.toggle('offline', !ok);
   }
 
-  const canPlay = () => me.alive && !me.waiting && phase === 'question'; // sadece soru sirasinda hareket
+  const canPlay = () => me.alive && !me.waiting && (phase === 'lobby' || phase === 'question');
 
   function render() {
     $hearts.textContent = '❤️'.repeat(Math.max(0, me.lives)) + '🖤'.repeat(Math.max(0, 3 - me.lives));
@@ -39,18 +39,20 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     if (phase === 'winner') msg = winner && winner.ids.includes(myId) ? 'KAZANDIN! 🏆' : 'OYUN BİTTİ';
     else if (!me.alive) { msg = 'ELENDİN'; cls = 'bad'; }
     else if (me.waiting) msg = 'SIRADAKİ OYUNU BEKLE';
-    else if (phase === 'lobby' || phase === 'setup') msg = (subject ? subject.icon + ' ' + subject.name + '\n' : '') + 'OYUNUN BAŞLAMASINI BEKLE';
-    else if (phase === 'question') msg = zone ? '' : 'CEVAP BÖLGESİNE GİT';
+    else if (phase === 'lobby') msg = 'OYUNUN BAŞLAMASINI BEKLE';
+    else if (phase === 'question') msg = 'CEVAP BÖLGESİNE GİT';
     else if (phase === 'result') {
       if (me.last === 'correct') { msg = 'DOĞRU! +100'; cls = 'ok'; }
       else if (me.last === 'wrong') { msg = 'YANLIŞ! −1 CAN'; cls = 'bad'; }
     }
     $msg.textContent = msg;
     $msg.className = 'msg ' + cls;
-    // Secili cevap: butonla degil, karakteri bolgeye goturerek (bolgeyi sunucu hesaplar)
-    const showPick = phase === 'question' && me.alive && !me.waiting;
-    $pick.textContent = showPick ? 'SEÇİLİ CEVAP: ' + (zone || '—') : '';
-    $pick.className = 'pick' + (showPick && zone ? ' z' + zone : '');
+    // Bulundugun bolge (sadece gosterim; cevap sure bitince sunucuda konumundan belirlenir)
+    const showZone = phase === 'question' && canPlay();
+    $zoneBox.className = 'zonebox' + (showZone && me.zone ? ' z-' + me.zone : '') + (showZone ? '' : ' idle');
+    $zoneLetter.textContent = showZone ? (me.zone || '–') : '';
+    $conn.classList.toggle('res-ok', phase === 'result' && me.last === 'correct');
+    $conn.classList.toggle('res-bad', phase === 'result' && me.last === 'wrong');
     $conn.classList.toggle('locked', !canPlay());
   }
 
@@ -60,19 +62,22 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
   }, 250);
 
   socket.on('game:state', (s) => {
-    phase = s.phase; winner = s.winner || null; subject = s.subject || null;
+    phase = s.phase; winner = s.winner || null;
     deadline = performance.now() + (s.endsIn || 0);
     render();
     if (!canPlay()) release();
   });
-  socket.on('me:zone', (z) => { zone = z || ''; render(); });
+  socket.on('me:zone', (z) => { me.zone = z || ''; render(); });
+  $findBtn.addEventListener('click', () => { if (socket.connected) socket.emit('player:find'); });
   socket.on('me:update', (m) => { Object.assign(me, m); render(); if (!canPlay()) release(); });
 
   // ---------- Katilim ----------
   function showPlay(player) {
     myId = player.id;
     $name.textContent = player.name;
-    $knob.style.setProperty('--k', player.color || '#3b82f6');
+    const col = player.color || '#3b82f6';
+    $conn.style.setProperty('--pc', col);
+    $dot.style.background = col;
     $err.textContent = '';
     $join.classList.add('hidden');
     $conn.classList.remove('hidden');

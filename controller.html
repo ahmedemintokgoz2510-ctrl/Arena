@@ -21,13 +21,18 @@
   </main>
   <section class="play hidden" id="connectedView">
     <header class="hud">
-      <div class="hud-left"><div class="pname" id="playerName"></div><div class="hud-mid" id="hudMid">● BAĞLI</div></div>
+      <div class="hud-left"><div class="pname"><i class="cdot" id="colorDot"></i><span id="playerName"></span></div><div class="hud-mid" id="hudMid">● BAĞLI</div></div>
       <div class="hearts" id="hearts" aria-label="Canlar">❤️❤️❤️</div>
       <div class="score" id="score">PUAN: 0</div>
     </header>
     <div class="main">
       <div class="stick-zone" id="stickZone"><div class="stick" id="stick"><div class="knob" id="knob"></div></div></div>
-      <div class="side"><div class="count" id="count"></div><div class="pick" id="pick"></div><div class="msg" id="msg"></div></div>
+      <div class="side">
+        <div class="count" id="count"></div>
+        <div class="zonebox idle" id="zoneBox"><small>SEÇİLİ BÖLGE</small><b id="zoneLetter"></b></div>
+        <div class="msg" id="msg"></div>
+        <button class="findbtn" id="findBtn" type="button">📍 Karakterimi göster</button>
+      </div>
     </div>
   </section>
   <script src="/socket.io/socket.io.js"></script>

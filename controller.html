@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- controller.html = TELEFON KUMANDASI (oyuncu telefonu YATAY tutar). QR kod bu sayfayi acar. Mantik: controller.js -->
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Sınıf Arenası - Kontrolcü</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="ctrl">
+  <p class="rotate">Telefonu yatay çevir.</p>
+  <main class="pad" id="joinView">
+    <section class="card">
+      <h1 class="ctitle">SINIF ARENASI</h1>
+      <h2>Oyuncu Adı</h2>
+      <input class="input" id="nameInput" type="text" maxlength="16" placeholder="Ahmed" autocomplete="off" autocapitalize="words">
+      <p class="err" id="err"></p>
+      <button class="btn" id="joinBtn">OYUNA KATIL</button>
+      <p class="conn" id="connJoin">● BAĞLANIYOR...</p>
+    </section>
+  </main>
+  <section class="play hidden" id="connectedView">
+    <header class="hud">
+      <div class="hearts" aria-label="3 can">❤️ ❤️ ❤️</div>
+      <div class="hud-mid" id="hudMid">● BAĞLI</div>
+      <div class="pname" id="playerName"></div>
+    </header>
+    <div class="stick-zone" id="stickZone">
+      <div class="stick" id="stick"><div class="knob" id="knob"></div></div>
+    </div>
+  </section>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="controller.js"></script>
+</body>
+</html>

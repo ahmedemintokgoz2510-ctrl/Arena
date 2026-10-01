@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!-- game.html = OYUN EKRANI (tahta / bilgisayar, 16:9). Mantik: game.js, tasarim: style.css -->
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sınıf Arenası</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="board-page">
+  <div class="board">
+    <div class="stage">
+      <header class="topbar">
+        <div class="info">
+          <div class="status bad" id="status">● BAĞLANTI BEKLENİYOR</div>
+          <div class="counter" id="counter">OYUNCULAR: 0/20</div>
+        </div>
+        <!-- SORU ALANI: ileride soru burada gorunecek -->
+        <div class="question" id="question">JOYSTICK İLE KARAKTERİNİ HAREKET ETTİR</div>
+        <!-- QR: dokununca buyur/kuculur; oyuncu yokken otomatik buyuk -->
+        <div class="join-panel big" id="joinPanel">
+          <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
+          <p class="join-title">TELEFONUNLA QR KODU OKUT</p>
+          <p class="join-sub">Sonra ismini girerek oyuna katıl.</p>
+          <p class="join-url" id="joinUrl"></p>
+        </div>
+      </header>
+      <div class="arena" id="field">
+        <!-- A/B/C/D CEVAP BOLGELERI icin ayrilmis yer (su an sadece soluk, aktif DEGIL) -->
+        <div class="zones" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
+        <div class="world" id="world"></div>
+      </div>
+    </div>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

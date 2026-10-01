@@ -1,0 +1,8 @@
+# render.yaml = ucretsiz Render hosting ayari (Render, bunu otomatik okur)
+services:
+  - type: web
+    name: sinif-arenasi
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start

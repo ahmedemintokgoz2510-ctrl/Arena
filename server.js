@@ -5,6 +5,7 @@ server.js = SUNUCU (bilgisayarda calisir: node server.js)
 - TUM oyun durumunu burada tutar: oyuncu id, isim, renk, x, y, baglanti durumu.
 - Telefondan sadece joystick girdisi (-1..1) alir; konumu SUNUCU hesaplar ve dogrular.
 - Oyun ekranina (game.html) konumlari Socket.IO ile yayinlar.
+- ASAMA 6: ders secimi (setup -> lobby), cevap bolgesi vurgusu (oyuncunun bolgesi sunucuda hesaplanir).
 - ASAMA 5: soru, sure, can, puan, elenme, kazanan = hepsi SUNUCUDA hesaplanir (istemciye guvenilmez).
 */
 const path = require('path');
@@ -45,7 +46,7 @@ const COLORS = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#a855f7','#ec4899','#14
   '#84cc16','#06b6d4','#eab308','#8b5cf6','#f43f5e','#0ea5e9','#10b981','#d946ef',
   '#fb7185','#60a5fa','#a3e635','#fbbf24','#c084fc','#2dd4bf','#fb923c','#94a3b8'];
 const MAX_PLAYERS = 20;
-const COLS = 6, ROWS = 4;      // 24 dogma noktasi (>= 20 oyuncu)
+const COLS = 8, ROWS = 3;   // dogma noktalari: baslangic alaninda 8x3 = 24 yer      // 24 dogma noktasi (>= 20 oyuncu)
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -63,7 +64,7 @@ function freeSlot() {
 function slotPos(slot) {
   return {
     x: ((slot % COLS) + 0.5) / COLS * WORLD_W,
-    y: (Math.floor(slot / COLS) % ROWS + 0.5) / ROWS * WORLD_H,
+    y: (Math.floor(slot / COLS) % ROWS + 0.5) / ROWS * ZONE_Y, // sadece baslangic alani (cevap bolgelerinin ustu)
   };
 }
 
@@ -84,7 +85,10 @@ setInterval(() => {
   const dt = Math.min((now - lastTick) / 1000, 0.1);
   lastTick = now;
   tickCount++;
-  players.forEach((p) => {
+  players.forEach((p, sid) => {
+    // Oyuncunun hangi cevap bolgesinde oldugunu SUNUCU hesaplar (tahta vurgusu + telefondaki "SECILI CEVAP")
+    const z = zoneOf(p.x, p.y) || '';
+    if (z !== p.zone) { p.zone = z; io.to(sid).emit('me:zone', z); dirty = true; }
     if (now - p.lastInputAt > INPUT_TIMEOUT) { p.ix = 0; p.iy = 0; }
     if (!canMove(p)) { p.ix = 0; p.iy = 0; } else if (p.ix || p.iy) {
       p.x = clamp(p.x + p.ix * SPEED * dt, 0, WORLD_W);
@@ -95,7 +99,7 @@ setInterval(() => {
   if (dirty && tickCount % 2 === 0) {
     dirty = false;
     io.to('board').emit('state:update',
-      Array.from(players.values()).map((p) => [p.id, Math.round(p.x), Math.round(p.y)]));
+      Array.from(players.values()).map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.zone || '']));
   }
 }, 1000 / 60);
 
@@ -175,9 +179,21 @@ app.get('/api/join-info', async (req, res) => {
 // Dogru cevap SADECE sunucuda durur; telefonlara hic gonderilmez.
 // ---------------------------------------------------------------
 const START_LIVES = 3, ANSWER_SECONDS = 15, RESULT_SECONDS = 5, POINTS = 100;
-const ZONE_Y = 300; // game.js ile ayni: bu cizginin altindaki 4 sutun = A, B, C, D bolgesi
+const ZONE_Y = 400; // bu cizginin altindaki 4 sutun = A, B, C, D bolgesi (oyun ekranina da gonderilir)
 
 // SADECE TEST SORULARI (500 gercek soru sonraki asamada eklenecek)
+// DERS LISTESI: buradan kolayca degistirilebilir (id, ad, simge, renk)
+const SUBJECTS = [
+  { id: 'turkce', name: 'TÜRKÇE', icon: '📖', color: '#ef4444' },
+  { id: 'matematik', name: 'MATEMATİK', icon: '➗', color: '#3b82f6' },
+  { id: 'fen', name: 'FEN BİLİMLERİ', icon: '🔬', color: '#22c55e' },
+  { id: 'sosyal', name: 'SOSYAL BİLGİLER', icon: '🌍', color: '#f59e0b' },
+  { id: 'ingilizce', name: 'İNGİLİZCE', icon: '🔤', color: '#a855f7' },
+  { id: 'din', name: 'DİN KÜLTÜRÜ', icon: '🕌', color: '#14b8a6' },
+  { id: 'tarih', name: 'TARİH', icon: '🏛️', color: '#b45309' },
+  { id: 'cografya', name: 'COĞRAFYA', icon: '🧭', color: '#0ea5e9' },
+];
+
 const QUESTIONS = [
   { question: "Türkiye'nin başkenti neresidir?", options: { A: 'İstanbul', B: 'Ankara', C: 'İzmir', D: 'Bursa' }, correctAnswer: 'B' },
   { question: 'Bir yılda kaç ay vardır?', options: { A: '10', B: '11', C: '12', D: '13' }, correctAnswer: 'C' },
@@ -186,14 +202,15 @@ const QUESTIONS = [
   { question: 'Güneş hangi yönden doğar?', options: { A: 'Batı', B: 'Kuzey', C: 'Güney', D: 'Doğu' }, correctAnswer: 'D' },
 ];
 
-const game = { phase: 'lobby', order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
+const game = { phase: 'setup', subject: null, order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
 
 function later(ms, fn) { clearTimeout(game.timer); game.timer = setTimeout(fn, ms); }
 function zoneOf(x, y) { return y < ZONE_Y ? null : 'ABCD'[Math.min(3, Math.floor(x / (WORLD_W / 4)))]; }
-function canMove(p) { return p.alive && !p.waiting && (game.phase === 'lobby' || game.phase === 'question'); }
+function canMove(p) { return p.alive && !p.waiting && game.phase === 'question'; } // sadece soru sirasinda hareket
 
 function baseState() { // dogru cevap burada YOK
-  const s = { phase: game.phase, round: game.round, endsIn: Math.max(0, game.endsAt - Date.now()), winner: game.winner };
+  const s = { phase: game.phase, subject: game.subject, zoneY: ZONE_Y, round: game.round, endsIn: Math.max(0, game.endsAt - Date.now()), winner: game.winner };
+  if (game.phase === 'setup') s.subjects = SUBJECTS;
   if (game.current && (game.phase === 'question' || game.phase === 'result')) {
     s.question = { text: game.current.question, options: game.current.options };
   }
@@ -217,7 +234,7 @@ function shuffle(a) {
 
 function resetToLobby() {
   clearTimeout(game.timer);
-  Object.assign(game, { phase: 'lobby', current: null, result: null, winner: null, round: 0, endsAt: 0 });
+  Object.assign(game, { phase: game.subject ? 'lobby' : 'setup', current: null, result: null, winner: null, round: 0, endsAt: 0 });
   players.forEach((p) => { p.lives = START_LIVES; p.score = 0; p.alive = true; p.waiting = false; p.last = null; });
   pushState(); broadcastPlayers(); pushMe();
 }
@@ -227,6 +244,8 @@ function startGame() {
   game.round = 0; game.winner = null;
   players.forEach((p) => { p.lives = START_LIVES; p.score = 0; p.alive = true; p.waiting = false; p.last = null; });
   game.startCount = players.size;
+  players.forEach((p) => { const pos = slotPos(p.slot); p.x = pos.x; p.y = pos.y; p.zone = ''; p.ix = 0; p.iy = 0; }); // herkes baslangic alanindan baslar
+  dirty = true;
   nextQuestion();
   broadcastPlayers();
 }
@@ -316,8 +335,8 @@ io.on('connection', (socket) => {
       name,
       key,
       connected: true,
-      lives: START_LIVES, score: 0, alive: true, last: null,
-      waiting: game.phase !== 'lobby', // oyun surerken katilan, siradaki oyunu bekler
+      lives: START_LIVES, score: 0, alive: true, last: null, zone: '',
+      waiting: !['setup', 'lobby'].includes(game.phase), // oyun surerken katilan, siradaki oyunu bekler
       color: old ? old.color : freeColor(),
       slot,
       x: pos.x,
@@ -338,8 +357,24 @@ io.on('connection', (socket) => {
 
   // Sadece tahta (board) oyunu baslatabilir / yeni oyuna gecebilir
   socket.on('game:start', () => {
-    if (!socket.rooms.has('board') || game.phase !== 'lobby' || players.size < 1) return;
+    if (!socket.rooms.has('board') || game.phase !== 'lobby' || !game.subject || players.size < 1) return;
     startGame();
+  });
+  // Ders secimi (setup) -> lobi -> oyun. Sadece tahta yapabilir.
+  socket.on('game:subject', (id) => {
+    if (!socket.rooms.has('board') || (game.phase !== 'setup' && game.phase !== 'lobby')) return;
+    const s = SUBJECTS.find((x) => x.id === id);
+    if (!s) return;
+    game.subject = s;
+    pushState();
+  });
+  socket.on('game:lobby', () => {
+    if (!socket.rooms.has('board') || game.phase !== 'setup' || !game.subject) return;
+    game.phase = 'lobby'; pushState(); pushMe();
+  });
+  socket.on('game:setup', () => {
+    if (!socket.rooms.has('board') || game.phase !== 'lobby') return;
+    game.phase = 'setup'; pushState(); pushMe();
   });
   socket.on('game:reset', () => {
     if (!socket.rooms.has('board') || game.phase !== 'winner') return;

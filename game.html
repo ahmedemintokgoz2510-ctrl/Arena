@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- game.html = OYUN EKRANI (tahta / bilgisayar, 16:9). Mantik: game.js, tasarim: style.css -->
+<!-- game.html = OYUN EKRANI (tahta / bilgisayar, 16:9): ders secimi -> lobi -> 2.5D arena. Mantik: game.js, tasarim: style.css -->
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
@@ -10,33 +10,58 @@
 <body class="board-page">
   <div class="board">
     <div class="stage">
-      <header class="topbar">
-        <div class="brand">
-          <div class="title">SINIF ARENASI</div>
-          <div class="info"><span class="status bad" id="status">● BAĞLANTI BEKLENİYOR</span><span class="counter" id="counter">OYUNCULAR: 0/20</span></div>
-        </div>
-        <!-- QR: dokununca buyur/kuculur; oyuncu yokken otomatik buyuk -->
-        <div class="join-panel big" id="joinPanel">
-          <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
-          <p class="join-title">TELEFONUNLA QR KODU OKUT</p>
-          <p class="join-sub">Sonra ismini girerek oyuna katıl.</p>
-          <p class="join-url" id="joinUrl"></p>
-        </div>
-      </header>
-      <section class="qcard">
-        <div class="qtext" id="qtext">JOYSTICK İLE KARAKTERİNİ HAREKET ETTİR</div>
-        <div class="timer hidden" id="timer">15</div>
-        <button class="btn start hidden" id="startBtn">OYUNU BAŞLAT</button>
+      <div class="status bad" id="status">● BAĞLANTI BEKLENİYOR</div>
+
+      <!-- 1) DERS SECIMI -->
+      <section class="screen setup hidden" id="setup">
+        <div class="logo">SINIF ARENASI</div>
+        <div class="lead">DERSİNİ SEÇ</div>
+        <div class="cards" id="cards"></div>
+        <button class="btn go" id="openLobby" disabled>LOBİYİ AÇ</button>
       </section>
-      <div class="arena" id="field">
-        <div class="world" id="world">
-          <!-- A/B/C/D cevap bolgeleri (konumlar server.js ZONE_Y ile ayni) -->
-          <div class="zone a"><b>A</b><span></span></div>
-          <div class="zone b"><b>B</b><span></span></div>
-          <div class="zone c"><b>C</b><span></span></div>
-          <div class="zone d"><b>D</b><span></span></div>
+
+      <!-- 2) LOBI -->
+      <section class="screen lobby hidden" id="lobby">
+        <div class="card lobby-left">
+          <div class="logo small">SINIF ARENASI</div>
+          <div class="subj" id="lobbySubject"></div>
+          <button class="link" id="changeSubject">DERSİ DEĞİŞTİR</button>
+          <h2 id="lobbyCount">OYUNCULAR 0/20</h2>
+          <ul class="plist" id="plist"></ul>
         </div>
-      </div>
+        <div class="card lobby-right">
+          <div class="join-title">TELEFONUNLA QR KODU OKUT</div>
+          <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
+          <div class="join-sub">Sonra ismini girerek oyuna katıl.</div>
+          <div class="join-url" id="joinUrl"></div>
+          <button class="btn go" id="startBtn" disabled>OYUNCU BEKLENİYOR...</button>
+        </div>
+      </section>
+
+      <!-- 3) OYUN: soru HUD + 2.5D arena -->
+      <section class="screen game hidden" id="game">
+        <header class="strip">
+          <span class="title">SINIF ARENASI</span>
+          <span class="counter" id="counter">OYUNCULAR: 0/20</span>
+        </header>
+        <div class="qhud">
+          <div class="qmeta" id="qmeta"></div>
+          <div class="qtext" id="qtext"></div>
+          <div class="timer" id="timer"></div>
+        </div>
+        <div class="arena">
+          <div class="plane" id="plane">
+            <!-- Zemin perspektifle yatirilir; A/B/C/D bolgeleri zemine boyanmistir -->
+            <div class="floor" id="floor">
+              <div class="zone a"><b>A</b><span></span></div>
+              <div class="zone b"><b>B</b><span></span></div>
+              <div class="zone c"><b>C</b><span></span></div>
+              <div class="zone d"><b>D</b><span></span></div>
+            </div>
+            <div class="chars" id="world"></div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
   <div class="overlay hidden" id="winnerBox">

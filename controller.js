@@ -1,27 +1,22 @@
 /*
 controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
-- Isim girip katilma, sanal joystick (pointer events), baglanti durumu gostergesi.
-- Sadece joystick yonunu (-1..1) sunucuya yollar; karakterin konumunu SUNUCU belirler.
-- Baglanti kopup gelirse ayni telefon kimligiyle (clientKey) otomatik yeniden katilir.
+- Isim girip katilma, sanal joystick (pointer events), baglanti durumu.
+- Can / puan / elenme bilgisi SADECE sunucudan gelir (me:update); telefon kendi basina belirleyemez.
+- Sunucuya sadece joystick yonunu (-1..1) yollar. Baglanti kopup gelirse otomatik yeniden katilir.
 */
 (() => {
   const socket = io();
-  const $join = document.getElementById('joinView');
-  const $conn = document.getElementById('connectedView');
-  const $input = document.getElementById('nameInput');
-  const $btn = document.getElementById('joinBtn');
-  const $err = document.getElementById('err');
-  const $name = document.getElementById('playerName');
-  const $zone = document.getElementById('stickZone');
-  const $stick = document.getElementById('stick');
-  const $knob = document.getElementById('knob');
+  const $ = (id) => document.getElementById(id);
+  const $join = $('joinView'), $conn = $('connectedView'), $input = $('nameInput'), $btn = $('joinBtn');
+  const $err = $('err'), $name = $('playerName'), $zone = $('stickZone'), $stick = $('stick'), $knob = $('knob');
+  const $connJoin = $('connJoin'), $hudMid = $('hudMid'), $hearts = $('hearts'), $score = $('score');
+  const $count = $('count'), $msg = $('msg');
 
-  let joined = false;
-  let lastName = '';
-  const $connJoin = document.getElementById('connJoin');
-  const $hudMid = document.getElementById('hudMid');
+  let joined = false, lastName = '', myId = '';
+  const me = { lives: 3, score: 0, alive: true, waiting: false, last: null }; // sunucudan gelen kopya
+  let phase = 'lobby', winner = null, deadline = 0;
 
-  // Telefonun kalici kimligi (sekme basina). Yeniden baglaninca sunucu ayni oyuncuyu taniyabilsin.
+  // Telefonun kalici kimligi (sekme basina): yeniden baglaninca ayni oyuncu taninir
   let clientKey = '';
   try { clientKey = sessionStorage.getItem('arenaKey') || ''; } catch (e) {}
   if (!clientKey) {
@@ -35,10 +30,44 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     $conn.classList.toggle('offline', !ok);
   }
 
+  const canPlay = () => me.alive && !me.waiting && (phase === 'lobby' || phase === 'question');
+
+  function render() {
+    $hearts.textContent = '❤️'.repeat(Math.max(0, me.lives)) + '🖤'.repeat(Math.max(0, 3 - me.lives));
+    $score.textContent = 'PUAN: ' + me.score;
+    let msg = '', cls = '';
+    if (phase === 'winner') msg = winner && winner.ids.includes(myId) ? 'KAZANDIN! 🏆' : 'OYUN BİTTİ';
+    else if (!me.alive) { msg = 'ELENDİN'; cls = 'bad'; }
+    else if (me.waiting) msg = 'SIRADAKİ OYUNU BEKLE';
+    else if (phase === 'lobby') msg = 'OYUNUN BAŞLAMASINI BEKLE';
+    else if (phase === 'question') msg = 'CEVAP BÖLGESİNE GİT';
+    else if (phase === 'result') {
+      if (me.last === 'correct') { msg = 'DOĞRU! +100'; cls = 'ok'; }
+      else if (me.last === 'wrong') { msg = 'YANLIŞ! −1 CAN'; cls = 'bad'; }
+    }
+    $msg.textContent = msg;
+    $msg.className = 'msg ' + cls;
+    $conn.classList.toggle('locked', !canPlay());
+  }
+
+  setInterval(() => {
+    const t = phase === 'question' ? Math.max(0, Math.ceil((deadline - performance.now()) / 1000)) : '';
+    if ($count.textContent !== String(t)) $count.textContent = t;
+  }, 250);
+
+  socket.on('game:state', (s) => {
+    phase = s.phase; winner = s.winner || null;
+    deadline = performance.now() + (s.endsIn || 0);
+    render();
+    if (!canPlay()) release();
+  });
+  socket.on('me:update', (m) => { Object.assign(me, m); render(); if (!canPlay()) release(); });
+
   // ---------- Katilim ----------
   function showPlay(player) {
-    $name.textContent = 'Oyuncu: ' + player.name;
-    $knob.style.background = player.color || '#38bdf8';
+    myId = player.id;
+    $name.textContent = player.name;
+    $knob.style.background = player.color || '#3b82f6';
     $err.textContent = '';
     $join.classList.add('hidden');
     $conn.classList.remove('hidden');
@@ -46,8 +75,8 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
 
   function join() {
     const name = $input.value.trim();
-    if (!name) { $err.textContent = 'Lütfen bir oyuncu adı gir.'; return; }
-    if (!socket.connected) { $err.textContent = 'Sunucuya bağlanılamadı. Wi-Fi ve adresi kontrol et.'; return; }
+    if (!name) { $err.textContent = 'Lütfen adını yaz.'; $input.focus(); return; }
+    if (!socket.connected) { $err.textContent = 'Sunucuya bağlanılamadı. İnterneti kontrol et.'; return; }
     $btn.disabled = true;
     $err.textContent = '';
     socket.emit('player:join', { name, key: clientKey }, (res) => {
@@ -55,7 +84,9 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
       if (!res || !res.ok) { $err.textContent = (res && res.error) || 'Katılım başarısız.'; return; }
       joined = true;
       lastName = res.player.name;
+      Object.assign(me, { lives: res.player.lives, score: res.player.score, alive: res.player.alive, waiting: res.player.waiting });
       showPlay(res.player);
+      render();
     });
   }
 
@@ -63,8 +94,7 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
   $input.addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
 
   // ---------- Joystick (pointer events; touch-action:none ile kaydirma yok) ----------
-  const SEND_MS = 33;      // ~30 girdi/sn
-  const DEADZONE = 0.12;
+  const SEND_MS = 33, DEADZONE = 0.12;
   let activeId = null, vx = 0, vy = 0, timer = null;
   const sent = { x: 0, y: 0, t: 0 };
 
@@ -72,7 +102,6 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     const R = $stick.clientWidth * 0.29;
     $knob.style.transform = `translate(-50%,-50%) translate(${vx * R}px,${vy * R}px)`;
   }
-
   function update(e) {
     const r = $stick.getBoundingClientRect();
     const R = r.width * 0.29;
@@ -84,17 +113,14 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     vx = dx; vy = dy;
     draw();
   }
-
   function send(force) {
-    const x = Math.round(vx * 100) / 100;
-    const y = Math.round(vy * 100) / 100;
+    const x = Math.round(vx * 100) / 100, y = Math.round(vy * 100) / 100;
     const now = performance.now();
     if (!force && x === sent.x && y === sent.y && now - sent.t < 150) return;
     if (!socket.connected) return;
     sent.x = x; sent.y = y; sent.t = now;
     socket.emit('player:input', { x, y });
   }
-
   function release() {
     if (activeId === null) return;
     activeId = null;
@@ -105,7 +131,7 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
   }
 
   $zone.addEventListener('pointerdown', (e) => {
-    if (activeId !== null) return; // tek parmak
+    if (activeId !== null || !canPlay()) return; // tek parmak; elenen/bekleyen oynayamaz
     activeId = e.pointerId;
     $zone.setPointerCapture(e.pointerId);
     update(e);
@@ -119,22 +145,17 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
 
   // iOS Safari: kaydirma, yakinlastirma, uzun basma menusunu engelle
   document.addEventListener('touchmove', (e) => { if (!e.target.closest('input')) e.preventDefault(); }, { passive: false });
-  ['gesturestart', 'gesturechange', 'contextmenu'].forEach((n) =>
-    document.addEventListener(n, (e) => e.preventDefault()));
+  ['gesturestart', 'gesturechange', 'contextmenu'].forEach((n) => document.addEventListener(n, (e) => e.preventDefault()));
   document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
 
   // ---------- Baglanti durumu ----------
-  // Baglanti kopup geri gelirse ayni isimle otomatik yeniden katil
   socket.on('connect', () => {
     setConn(true);
     if (joined) {
       socket.emit('player:join', { name: lastName, key: clientKey }, (res) => { if (res && res.ok) showPlay(res.player); });
     }
   });
-  socket.on('disconnect', () => {
-    release();
-    setConn(false); // ekranda BAGLANTI KESILDI gorunur; baglanti gelince otomatik yeniden katilir
-  });
+  socket.on('disconnect', () => { release(); setConn(false); });
   socket.on('connect_error', () => setConn(false));
   setConn(socket.connected);
 })();

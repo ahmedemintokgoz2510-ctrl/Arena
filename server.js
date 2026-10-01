@@ -5,6 +5,7 @@ server.js = SUNUCU (bilgisayarda calisir: node server.js)
 - TUM oyun durumunu burada tutar: oyuncu id, isim, renk, x, y, baglanti durumu.
 - Telefondan sadece joystick girdisi (-1..1) alir; konumu SUNUCU hesaplar ve dogrular.
 - Oyun ekranina (game.html) konumlari Socket.IO ile yayinlar.
+- ASAMA 5: soru, sure, can, puan, elenme, kazanan = hepsi SUNUCUDA hesaplanir (istemciye guvenilmez).
 */
 const path = require('path');
 const os = require('os');
@@ -67,7 +68,7 @@ function slotPos(slot) {
 }
 
 function publicPlayer(p) {
-  return { id: p.id, name: p.name, color: p.color, connected: p.connected, x: Math.round(p.x), y: Math.round(p.y) };
+  return { id: p.id, name: p.name, color: p.color, connected: p.connected, lives: p.lives, score: p.score, alive: p.alive, waiting: p.waiting, x: Math.round(p.x), y: Math.round(p.y) };
 }
 
 function getPlayerList() {
@@ -85,7 +86,7 @@ setInterval(() => {
   tickCount++;
   players.forEach((p) => {
     if (now - p.lastInputAt > INPUT_TIMEOUT) { p.ix = 0; p.iy = 0; }
-    if (p.ix || p.iy) {
+    if (!canMove(p)) { p.ix = 0; p.iy = 0; } else if (p.ix || p.iy) {
       p.x = clamp(p.x + p.ix * SPEED * dt, 0, WORLD_W);
       p.y = clamp(p.y + p.iy * SPEED * dt, 0, WORLD_H);
       dirty = true;
@@ -168,10 +169,119 @@ app.get('/api/join-info', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------
+// ASAMA 5: OYUN AKISI (tum kurallar sunucuda)
+// lobby -> question (15 sn) -> result (5 sn) -> question ... -> winner -> lobby
+// Dogru cevap SADECE sunucuda durur; telefonlara hic gonderilmez.
+// ---------------------------------------------------------------
+const START_LIVES = 3, ANSWER_SECONDS = 15, RESULT_SECONDS = 5, POINTS = 100;
+const ZONE_Y = 300; // game.js ile ayni: bu cizginin altindaki 4 sutun = A, B, C, D bolgesi
+
+// SADECE TEST SORULARI (500 gercek soru sonraki asamada eklenecek)
+const QUESTIONS = [
+  { question: "Türkiye'nin başkenti neresidir?", options: { A: 'İstanbul', B: 'Ankara', C: 'İzmir', D: 'Bursa' }, correctAnswer: 'B' },
+  { question: 'Bir yılda kaç ay vardır?', options: { A: '10', B: '11', C: '12', D: '13' }, correctAnswer: 'C' },
+  { question: 'Hangisi bir meyvedir?', options: { A: 'Elma', B: 'Masa', C: 'Kalem', D: 'Defter' }, correctAnswer: 'A' },
+  { question: '3 + 4 kaçtır?', options: { A: '6', B: '8', C: '7', D: '9' }, correctAnswer: 'C' },
+  { question: 'Güneş hangi yönden doğar?', options: { A: 'Batı', B: 'Kuzey', C: 'Güney', D: 'Doğu' }, correctAnswer: 'D' },
+];
+
+const game = { phase: 'lobby', order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
+
+function later(ms, fn) { clearTimeout(game.timer); game.timer = setTimeout(fn, ms); }
+function zoneOf(x, y) { return y < ZONE_Y ? null : 'ABCD'[Math.min(3, Math.floor(x / (WORLD_W / 4)))]; }
+function canMove(p) { return p.alive && !p.waiting && (game.phase === 'lobby' || game.phase === 'question'); }
+
+function baseState() { // dogru cevap burada YOK
+  const s = { phase: game.phase, round: game.round, endsIn: Math.max(0, game.endsAt - Date.now()), winner: game.winner };
+  if (game.current && (game.phase === 'question' || game.phase === 'result')) {
+    s.question = { text: game.current.question, options: game.current.options };
+  }
+  return s;
+}
+function pushState() {
+  const base = baseState();
+  // Dogru cevap + oyuncu sonuclari yalnizca tahtaya; telefonlar kendi sonucunu me:update ile alir
+  io.to('board').emit('game:state', Object.assign({}, base, { result: game.phase === 'result' ? game.result : null }));
+  io.except('board').emit('game:state', base);
+}
+function sendMe(sid, p) {
+  io.to(sid).emit('me:update', { lives: p.lives, score: p.score, alive: p.alive, waiting: p.waiting, last: p.last });
+}
+function pushMe() { players.forEach((p, sid) => sendMe(sid, p)); }
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+function resetToLobby() {
+  clearTimeout(game.timer);
+  Object.assign(game, { phase: 'lobby', current: null, result: null, winner: null, round: 0, endsAt: 0 });
+  players.forEach((p) => { p.lives = START_LIVES; p.score = 0; p.alive = true; p.waiting = false; p.last = null; });
+  pushState(); broadcastPlayers(); pushMe();
+}
+
+function startGame() {
+  game.order = shuffle(QUESTIONS.map((_, i) => i));
+  game.round = 0; game.winner = null;
+  players.forEach((p) => { p.lives = START_LIVES; p.score = 0; p.alive = true; p.waiting = false; p.last = null; });
+  game.startCount = players.size;
+  nextQuestion();
+  broadcastPlayers();
+}
+
+function nextQuestion() {
+  game.current = QUESTIONS[game.order[game.round % game.order.length]];
+  game.round++;
+  game.phase = 'question';
+  game.result = null;
+  game.endsAt = Date.now() + ANSWER_SECONDS * 1000;
+  players.forEach((p) => { p.last = null; });
+  pushState(); pushMe();
+  later(ANSWER_SECONDS * 1000, endQuestion);
+}
+
+function endQuestion() {
+  const per = {};
+  players.forEach((p) => {
+    if (!p.alive || p.waiting) return;
+    p.ix = 0; p.iy = 0;
+    if (zoneOf(p.x, p.y) === game.current.correctAnswer) {
+      p.score += POINTS; p.last = 'correct'; per[p.id] = 'correct';
+    } else { // yanlis bolge VEYA hicbir bolgede degil
+      p.lives -= 1; p.last = 'wrong'; per[p.id] = 'wrong';
+      if (p.lives <= 0) p.alive = false; // elendi
+    }
+  });
+  game.phase = 'result';
+  game.endsAt = Date.now() + RESULT_SECONDS * 1000;
+  game.result = { correct: game.current.correctAnswer, per };
+  pushState(); broadcastPlayers(); pushMe();
+  later(RESULT_SECONDS * 1000, afterResult);
+}
+
+function afterResult() {
+  const all = Array.from(players.values()).filter((p) => !p.waiting);
+  const active = all.filter((p) => p.alive);
+  const over = active.length === 0 || (game.startCount >= 2 && active.length <= 1);
+  if (!over) return nextQuestion();
+  if (!all.length) return resetToLobby();
+  const pool = active.length === 1 ? active : all; // herkes elendiyse en yuksek puanlilar kazanir
+  const max = Math.max(...pool.map((p) => p.score));
+  const winners = active.length === 1 ? active : pool.filter((p) => p.score === max);
+  game.winner = { ids: winners.map((p) => p.id), names: winners.map((p) => p.name), score: max };
+  game.phase = 'winner'; game.endsAt = 0; game.current = null; game.result = null;
+  pushState(); pushMe();
+}
+
+function afterPlayerRemoved() { if (players.size === 0) resetToLobby(); }
+
 io.on('connection', (socket) => {
   socket.on('board:join', () => {
     socket.join('board');
     socket.emit('players:update', getPlayerList());
+    socket.emit('game:state', Object.assign(baseState(), { result: game.phase === 'result' ? game.result : null }));
   });
 
   socket.on('player:join', (rawData, ack) => {
@@ -206,6 +316,8 @@ io.on('connection', (socket) => {
       name,
       key,
       connected: true,
+      lives: START_LIVES, score: 0, alive: true, last: null,
+      waiting: game.phase !== 'lobby', // oyun surerken katilan, siradaki oyunu bekler
       color: old ? old.color : freeColor(),
       slot,
       x: pos.x,
@@ -213,12 +325,25 @@ io.on('connection', (socket) => {
       ix: 0, iy: 0,        // joystick girdisi (-1..1)
       lastInputAt: 0,
     };
+    if (old) { player.lives = old.lives; player.score = old.score; player.alive = old.alive; player.waiting = old.waiting; player.last = old.last; }
     players.set(socket.id, player);
 
     console.log(`[+] ${player.name} (${player.id}) bağlandı. Toplam: ${players.size}`);
     reply({ ok: true, player: publicPlayer(player) });
+    socket.emit('game:state', baseState());
+    sendMe(socket.id, player);
     io.to('board').emit('player:joined', { id: player.id, name: player.name, color: player.color });
     broadcastPlayers();
+  });
+
+  // Sadece tahta (board) oyunu baslatabilir / yeni oyuna gecebilir
+  socket.on('game:start', () => {
+    if (!socket.rooms.has('board') || game.phase !== 'lobby' || players.size < 1) return;
+    startGame();
+  });
+  socket.on('game:reset', () => {
+    if (!socket.rooms.has('board') || game.phase !== 'winner') return;
+    resetToLobby();
   });
 
   socket.on('player:input', (d) => {
@@ -231,6 +356,7 @@ io.on('connection', (socket) => {
     if (len > 1) { x /= len; y /= len; }
     const now = Date.now();
     if ((x || y) && now - p.lastInputAt < MIN_INPUT_GAP) return; // hiz siniri
+    if (!canMove(p)) { p.ix = 0; p.iy = 0; return; } // elenen / bekleyen / sonuc ekrani: hareket yok
     p.ix = x; p.iy = y; p.lastInputAt = now;
   });
 
@@ -241,6 +367,7 @@ io.on('connection', (socket) => {
     console.log(`[-] ${player.name} (${player.id}) ayrıldı. Toplam: ${players.size}`);
     io.to('board').emit('player:left', { id: player.id, name: player.name });
     broadcastPlayers();
+    afterPlayerRemoved();
   });
 });
 

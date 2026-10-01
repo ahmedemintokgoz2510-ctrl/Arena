@@ -11,12 +11,10 @@
   <div class="board">
     <div class="stage">
       <header class="topbar">
-        <div class="info">
-          <div class="status bad" id="status">● BAĞLANTI BEKLENİYOR</div>
-          <div class="counter" id="counter">OYUNCULAR: 0/20</div>
+        <div class="brand">
+          <div class="title">SINIF ARENASI</div>
+          <div class="info"><span class="status bad" id="status">● BAĞLANTI BEKLENİYOR</span><span class="counter" id="counter">OYUNCULAR: 0/20</span></div>
         </div>
-        <!-- SORU ALANI: ileride soru burada gorunecek -->
-        <div class="question" id="question">JOYSTICK İLE KARAKTERİNİ HAREKET ETTİR</div>
         <!-- QR: dokununca buyur/kuculur; oyuncu yokken otomatik buyuk -->
         <div class="join-panel big" id="joinPanel">
           <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
@@ -25,11 +23,28 @@
           <p class="join-url" id="joinUrl"></p>
         </div>
       </header>
+      <section class="qcard">
+        <div class="qtext" id="qtext">JOYSTICK İLE KARAKTERİNİ HAREKET ETTİR</div>
+        <div class="timer hidden" id="timer">15</div>
+        <button class="btn start hidden" id="startBtn">OYUNU BAŞLAT</button>
+      </section>
       <div class="arena" id="field">
-        <!-- A/B/C/D CEVAP BOLGELERI icin ayrilmis yer (su an sadece soluk, aktif DEGIL) -->
-        <div class="zones" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
-        <div class="world" id="world"></div>
+        <div class="world" id="world">
+          <!-- A/B/C/D cevap bolgeleri (konumlar server.js ZONE_Y ile ayni) -->
+          <div class="zone a"><b>A</b><span></span></div>
+          <div class="zone b"><b>B</b><span></span></div>
+          <div class="zone c"><b>C</b><span></span></div>
+          <div class="zone d"><b>D</b><span></span></div>
+        </div>
       </div>
+    </div>
+  </div>
+  <div class="overlay hidden" id="winnerBox">
+    <div class="win-card">
+      <div class="win-title">🏆 KAZANAN</div>
+      <div class="win-name" id="winName"></div>
+      <div class="win-score" id="winScore"></div>
+      <button class="btn" id="resetBtn">YENİ OYUN</button>
     </div>
   </div>
   <script src="/socket.io/socket.io.js"></script>

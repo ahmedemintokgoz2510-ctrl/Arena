@@ -3,8 +3,16 @@
   "version": "1.0.0",
   "description": "Sinif Arenasi - Asama 1: Temel altyapi",
   "main": "server.js",
-  "engines": { "node": ">=18" },
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "^4.19.2",
-    "qrcode": "^1.5.4", "socket.io": "^4.7.5" }
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.4"
+  }
 }

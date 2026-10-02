@@ -182,20 +182,26 @@ app.get('/api/join-info', async (req, res) => {
 
 // ---------------------------------------------------------------
 // ASAMA 5: OYUN AKISI (tum kurallar sunucuda)
-// lobby -> question (15 sn) -> result (5 sn) -> question ... -> winner -> lobby
+// lobby -> [countdown 5..1 BASLA! (5+ oyuncu varsa)] -> question (30 sn) -> result (2 sn) -> question ... -> winner -> lobby
 // Dogru cevap SADECE sunucuda durur; telefonlara hic gonderilmez.
 // ---------------------------------------------------------------
-const START_LIVES = 3, ANSWER_SECONDS = 15, RESULT_SECONDS = 5, POINTS = 100;
+const START_LIVES = 3, ANSWER_SECONDS = 30, RESULT_SECONDS = 2, POINTS = 100;
+const COUNTDOWN_MIN_PLAYERS = 5; // bu kadar veya daha fazla oyuncu varsa oyun basinda 5-4-3-2-1-BASLA! geri sayimi
+const COUNTDOWN_MS = 6000;       // 5,4,3,2,1 + BASLA! (her biri ~1 sn)
 const ZONE_Y = 300; // game.js ile ayni: bu cizginin altindaki 4 sutun = A, B, C, D bolgesi
 
 // ASAMA 6: DERS LISTESI (kolay degistirilebilir). Gercek soru bankalari sonraki asamada eklenecek.
 const SUBJECTS = [
-  { id: 'turkce', name: 'TÜRKÇE', icon: '📚' },
-  { id: 'fen', name: 'FEN BİLİMLERİ', icon: '🔬' },
-  { id: 'inkilap', name: 'İNKILAP', icon: '🇹🇷' },
-  { id: 'ingilizce', name: 'İNGİLİZCE', icon: '🔤' },
+  { id: 'matematik', name: 'MATEMATİK', icon: '📐' },
+  { id: 'edebiyat', name: 'TÜRK DİLİ VE EDEBİYATI', icon: '📖' },
+  { id: 'fizik', name: 'FİZİK', icon: '⚡' },
+  { id: 'kimya', name: 'KİMYA', icon: '🧪' },
+  { id: 'biyoloji', name: 'BİYOLOJİ', icon: '🧬' },
+  { id: 'tarih', name: 'TARİH', icon: '🏛️' },
+  { id: 'cografya', name: 'COĞRAFYA', icon: '🌍' },
   { id: 'din', name: 'DİN KÜLTÜRÜ', icon: '🕌' },
-  { id: 'karma', name: 'KARMA', icon: '🎲' }, // tum derslerin karisigi (soru bankalari gelince)
+  { id: 'ingilizce', name: 'İNGİLİZCE', icon: '🔤' },
+  { id: 'karma', name: 'KARMA', icon: '🎲' },
 ];
 
 // SADECE TEST SORULARI (her ders icin gercek sorular sonraki asamada eklenecek; simdilik tum dersler bunu kullanir)
@@ -207,20 +213,71 @@ const QUESTIONS = [
   { question: 'Güneş hangi yönden doğar?', options: { A: 'Batı', B: 'Kuzey', C: 'Güney', D: 'Doğu' }, correctAnswer: 'D' },
 ];
 
-// ASAMA 8 HAZIRLIK: her dersin KENDI bagimsiz soru havuzu buraya gelecek, ornek:
-//   QUESTION_BANKS.din = [ { question, options: {A,B,C,D}, correctAnswer }, ... ];
-// Karma da kendi sorularina sahip olacak (diger derslerden cekmez). Havuz yoksa test sorulari kullanilir.
+// ---- ASAMA 8: SORU BANKALARI ----
+// Her ders q-<dersid>.js dosyasindan yuklenir (ornek: q-matematik.js, q-karma.js). Bu dosyalar istemciye SUNULMAZ
+// (dogru cevaplar sadece sunucuda kalir). Gecersiz / tekrar eden ID'li sorular atlanir ve logda uyari verilir.
+// Dosyasi yoksa ya da bos ise o ders icin 5'lik TEST havuzu kullanilir.
+const DIFFS = ['easy', 'medium', 'hard'];
+const DIFF_WEIGHT = { easy: 0.3, medium: 0.5, hard: 0.2 }; // hedef dagilim %30 / %50 / %20
 const QUESTION_BANKS = {};
+function loadBanks() {
+  const seenIds = new Set();
+  SUBJECTS.forEach((sub) => {
+    let raw = [];
+    try { raw = require('./q-' + sub.id + '.js'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') console.warn('[soru] ' + sub.id + ' yuklenemedi:', e.message); }
+    const list = [];
+    (Array.isArray(raw) ? raw : []).forEach((q, i) => {
+      const ok = q && typeof q.id === 'string' && q.id && !seenIds.has(q.id) && DIFFS.includes(q.difficulty) &&
+        typeof q.question === 'string' && q.question && q.answers && ['A', 'B', 'C', 'D'].every((k) => typeof q.answers[k] === 'string' && q.answers[k]) &&
+        ['A', 'B', 'C', 'D'].includes(q.correct);
+      if (!ok) { console.warn('[soru] ' + sub.id + ' #' + (i + 1) + ' gecersiz ya da tekrar eden ID, atlandi'); return; }
+      seenIds.add(q.id);
+      list.push({ id: q.id, difficulty: q.difficulty, question: q.question, options: q.answers, correctAnswer: q.correct });
+    });
+    QUESTION_BANKS[sub.id] = list;
+    const c = (d) => list.filter((q) => q.difficulty === d).length;
+    console.log('[soru] ' + sub.id + ': ' + list.length + ' (kolay ' + c('easy') + ', orta ' + c('medium') + ', zor ' + c('hard') + ')' + (list.length ? '' : ' -> test havuzu kullanilacak'));
+  });
+}
+loadBanks();
 function poolFor(subjectId) {
   const b = QUESTION_BANKS[subjectId];
-  return Array.isArray(b) && b.length ? b : QUESTIONS;
+  return Array.isArray(b) && b.length ? b : QUESTIONS.map((q, i) => ({ id: 'test_' + (i + 1), difficulty: 'medium', question: q.question, options: q.options, correctAnswer: q.correctAnswer }));
 }
 
-const game = { subject: null, pool: QUESTIONS, used: 0, phase: 'lobby', order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
+// Tekrar onleme: (1) usedQuestionIds = bu oyunda cikan sorular, ASLA tekrar secilmez.
+// (2) seenBySubject = onceki oyunlarda cikanlar; sunucu acik oldukca yeni oyunlarda da once hic cikmamis sorular secilir.
+// Ders havuzu tamamen tukenirse seenBySubject o ders icin sifirlanir.
+const seenBySubject = {};
+
+function pickQuestion() {
+  const free = game.pool.filter((q) => !game.usedQuestionIds.has(q.id));
+  if (!free.length) return null; // bu oyunda havuz bitti
+  const seen = seenBySubject[game.subject] || (seenBySubject[game.subject] = new Set());
+  let cand = free.filter((q) => !seen.has(q.id));
+  if (!cand.length) { game.pool.forEach((q) => seen.delete(q.id)); cand = free; }
+  // zorluk: hedef agirlikli rastgele; ust uste 2 ayni zorluktan sonra ayni zorluga agirlik dusurulur (onceden tahmin edilemez)
+  const have = DIFFS.filter((d) => cand.some((q) => q.difficulty === d));
+  const w = have.map((d) => {
+    let x = DIFF_WEIGHT[d];
+    const r = game.recentDiffs;
+    if (r.length >= 2 && r[r.length - 1] === d && r[r.length - 2] === d && have.length > 1) x = 0; // ust uste 3. kez ayni zorluk gelmez
+    return x;
+  });
+  let t = Math.random() * w.reduce((a, b) => a + b, 0), diff = have[have.length - 1];
+  for (let i = 0; i < have.length; i++) { t -= w[i]; if (t <= 0) { diff = have[i]; break; } }
+  const same = cand.filter((q) => q.difficulty === diff);
+  const q = same[Math.floor(Math.random() * same.length)];
+  game.usedQuestionIds.add(q.id); seen.add(q.id);
+  game.recentDiffs.push(q.difficulty); if (game.recentDiffs.length > 4) game.recentDiffs.shift();
+  return q;
+}
+
+const game = { subject: null, pool: [], usedQuestionIds: new Set(), recentDiffs: [], phase: 'lobby', order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
 
 function later(ms, fn) { clearTimeout(game.timer); game.timer = setTimeout(fn, ms); }
 function zoneOf(x, y) { return y < ZONE_Y ? null : 'ABCD'[Math.min(3, Math.floor(x / (WORLD_W / 4)))]; }
-function canMove(p) { return p.alive && !p.waiting && (game.phase === 'lobby' || game.phase === 'question'); }
+function canMove(p) { return p.alive && !p.waiting && (game.phase === 'lobby' || game.phase === 'countdown' || game.phase === 'question'); }
 
 function baseState() { // dogru cevap burada YOK
   const subj = SUBJECTS.find((x) => x.id === game.subject) || null;
@@ -255,18 +312,26 @@ function resetToLobby() {
 
 function startGame() {
   game.pool = poolFor(game.subject);
-  game.order = shuffle(game.pool.map((_, i) => i)); // ayni oyunda soru tekrar etmez (havuz bitmedikce)
-  game.used = 0;
+  game.usedQuestionIds = new Set(); game.recentDiffs = []; // yeni oyun: kullanilan soru listesi sifirlanir
   game.round = 0; game.winner = null;
   players.forEach((p) => { p.lives = START_LIVES; p.score = 0; p.alive = true; p.waiting = false; p.last = null; });
   game.startCount = players.size;
-  nextQuestion();
+  if (players.size >= COUNTDOWN_MIN_PLAYERS) { // geri sayim: tahtada 5-4-3-2-1-BASLA!, sonra ilk soru
+    game.phase = 'countdown'; game.current = null; game.result = null;
+    game.endsAt = Date.now() + COUNTDOWN_MS;
+    pushState(); pushMe();
+    later(COUNTDOWN_MS, nextQuestion);
+  } else nextQuestion();
   broadcastPlayers();
 }
 
 function nextQuestion() {
-  if (game.used >= game.order.length) { game.order = shuffle(game.pool.map((_, i) => i)); game.used = 0; } // havuz bitti
-  game.current = game.pool[game.order[game.used++]];
+  const q = pickQuestion();
+  if (!q) { // havuz bitti: soru tekrar ETMEZ, oyun biter
+    const all = Array.from(players.values()).filter((p) => !p.waiting);
+    return endGame(all, all.filter((p) => p.alive), true);
+  }
+  game.current = q;
   game.round++;
   game.phase = 'question';
   game.result = null;
@@ -281,10 +346,12 @@ function endQuestion() {
   players.forEach((p) => {
     if (!p.alive || p.waiting) return;
     p.ix = 0; p.iy = 0;
-    if (zoneOf(p.x, p.y) === game.current.correctAnswer) {
+    const zn = zoneOf(p.x, p.y);
+    if (zn === game.current.correctAnswer) {
       p.score += POINTS; p.last = 'correct'; per[p.id] = 'correct';
-    } else { // yanlis bolge VEYA hicbir bolgede degil
-      p.lives -= 1; p.last = 'wrong'; per[p.id] = 'wrong';
+    } else { // 'wrong' = yanlis bolge, 'none' = hicbir bolgede degil (CEVAP VERILMEDI); ikisi de 1 can kaybettirir
+      const miss = zn ? 'wrong' : 'none';
+      p.lives -= 1; p.last = miss; per[p.id] = miss;
       if (p.lives <= 0) p.alive = false; // elendi
     }
   });
@@ -300,8 +367,13 @@ function afterResult() {
   const active = all.filter((p) => p.alive);
   const over = active.length === 0 || (game.startCount >= 2 && active.length <= 1);
   if (!over) return nextQuestion();
+  endGame(all, active, false);
+}
+
+function endGame(all, active, exhausted) {
   if (!all.length) return resetToLobby();
-  const pool = active.length === 1 ? active : all; // herkes elendiyse en yuksek puanlilar kazanir
+  // tek kisi kaldiysa o; herkes elendiyse tum oyuncular arasinda; sorular bittiyse hayatta kalanlar arasinda en yuksek puan
+  const pool = active.length === 1 ? active : (exhausted && active.length ? active : all);
   const max = Math.max(...pool.map((p) => p.score));
   const winners = active.length === 1 ? active : pool.filter((p) => p.score === max);
   game.winner = { ids: winners.map((p) => p.id), names: winners.map((p) => p.name), score: max };

@@ -30,7 +30,7 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     $conn.classList.toggle('offline', !ok);
   }
 
-  const canPlay = () => me.alive && !me.waiting && (phase === 'lobby' || phase === 'question');
+  const canPlay = () => me.alive && !me.waiting && (phase === 'lobby' || phase === 'countdown' || phase === 'question');
 
   function render() {
     $hearts.textContent = '❤️'.repeat(Math.max(0, me.lives)) + '🖤'.repeat(Math.max(0, 3 - me.lives));
@@ -40,10 +40,12 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     else if (!me.alive) { msg = 'ELENDİN'; cls = 'bad'; }
     else if (me.waiting) msg = 'SIRADAKİ OYUNU BEKLE';
     else if (phase === 'lobby') msg = 'OYUNUN BAŞLAMASINI BEKLE';
+    else if (phase === 'countdown') msg = 'HAZIRLAN!';
     else if (phase === 'question') msg = 'CEVAP BÖLGESİNE GİT';
     else if (phase === 'result') {
       if (me.last === 'correct') { msg = 'DOĞRU! +100'; cls = 'ok'; }
       else if (me.last === 'wrong') { msg = 'YANLIŞ! −1 CAN'; cls = 'bad'; }
+      else if (me.last === 'none') { msg = 'CEVAP VERİLMEDİ! −1 CAN'; cls = 'bad'; }
     }
     $msg.textContent = msg;
     $msg.className = 'msg ' + cls;
@@ -52,7 +54,7 @@ controller.js = TELEFON KUMANDASI MANTIGI (controller.html icin)
     $zoneBox.className = 'zonebox' + (showZone && me.zone ? ' z-' + me.zone : '') + (showZone ? '' : ' idle');
     $zoneLetter.textContent = showZone ? (me.zone || '–') : '';
     $conn.classList.toggle('res-ok', phase === 'result' && me.last === 'correct');
-    $conn.classList.toggle('res-bad', phase === 'result' && me.last === 'wrong');
+    $conn.classList.toggle('res-bad', phase === 'result' && (me.last === 'wrong' || me.last === 'none'));
     $conn.classList.toggle('locked', !canPlay());
     queueMap();
   }

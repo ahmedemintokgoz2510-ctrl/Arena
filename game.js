@@ -5,6 +5,54 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
   Sunucudaki bolge mantigi (y>=300, 4 sutun) ile gorunen bolge birebir aynidir.
 - Dosyanin sonundaki ikinci blok QR kodu yukler.
 */
+// ---- SES: Web Audio ile uretilir (dosya yok). Sayfaya ilk dokunus/tiklamadan sonra acilir; sadece onemli olaylarda calar. ----
+const Sfx = (() => {
+  let ctx = null, master = null, on = true;
+  try { on = localStorage.getItem('arenaSound') !== 'off'; } catch (e) {}
+  function unlock() {
+    try {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.22; master.connect(ctx.destination);
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    } catch (e) {}
+  }
+  ['pointerdown', 'keydown'].forEach((n) => document.addEventListener(n, unlock, { capture: true }));
+  // tek bir nota: frekans, baslangic gecikmesi, sure, dalga, ses, (istege bagli) kayma frekansi
+  function tone(f, at, dur, type, vol, to) {
+    if (!ctx || !on) return;
+    const t0 = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(f, t0);
+    if (to) o.frequency.exponentialRampToValueAtTime(to, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol || 0.5, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.03);
+  }
+  const seq = (notes, step, dur, type, vol) => notes.forEach((f, i) => tone(f, i * step, dur, type, vol));
+  return {
+    unlock,
+    isOn: () => on,
+    toggle() { on = !on; try { localStorage.setItem('arenaSound', on ? 'on' : 'off'); } catch (e) {} unlock(); if (on) this.click(); return on; },
+    click() { tone(660, 0, 0.06, 'square', 0.18); },
+    subject() { seq([523, 784], 0.07, 0.12, 'triangle', 0.4); },
+    join() { tone(520, 0, 0.12, 'sine', 0.4, 880); },
+    start() { seq([262, 330, 392, 523], 0.11, 0.2, 'triangle', 0.45); },
+    question() { seq([784, 988], 0.12, 0.22, 'sine', 0.45); },
+    tick() { tone(500, 0, 0.04, 'sine', 0.12); },
+    last3() { tone(880, 0, 0.14, 'square', 0.25); },
+    cd() { tone(587, 0, 0.14, 'triangle', 0.4); },
+    go() { seq([523, 784, 1047], 0.08, 0.28, 'square', 0.3); },
+    timeup() { tone(330, 0, 0.35, 'triangle', 0.35, 196); },
+    correct() { seq([523, 659, 784], 0.09, 0.16, 'triangle', 0.5); },
+    wrong() { tone(220, 0, 0.3, 'sawtooth', 0.28, 130); },
+    heart() { tone(440, 0, 0.18, 'sine', 0.35, 220); },
+    score() { tone(988, 0, 0.08, 'square', 0.2); tone(1319, 0.08, 0.22, 'square', 0.2); },
+    out() { seq([392, 330, 262, 196], 0.13, 0.2, 'triangle', 0.4); },
+    winner() { seq([523, 659, 784, 1047, 784, 1047], 0.13, 0.25, 'triangle', 0.5); },
+  };
+})();
+
 (() => {
   const socket = io();
   const WORLD_W = 1600, WORLD_H = 900; // server.js ile ayni olmali
@@ -20,11 +68,14 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
   const $picker = $('picker'), $subjects = $('subjects');
   const $winBox = $('winnerBox'), $winName = $('winName'), $winScore = $('winScore'), $reset = $('resetBtn');
   const $lb = $('leaderboard'), $conf = $('confetti');
+  const $snd = $('sndBtn');
+  const $cd = $('countdown'), $cdNum = $('cdNum');
   const labels = Array.from($world.querySelectorAll('.zlabel'));
   const LETTERS = ['A', 'B', 'C', 'D'];
 
   let players = [], phase = 'lobby', question = null, result = null, winner = null, deadline = 0;
-  let subject = null, subjects = [], round = 0, picking = false, barKey = '', totalMs = 15000, lbKey = '', confettiOn = false;
+  let prevPhase = 'lobby', prevRound = 0, lastSec = -1, lastCd = -1, cdSeen = false;
+  let subject = null, subjects = [], round = 0, picking = false, barKey = '', totalMs = 30000, lbKey = '', confettiOn = false;
 
   function setStatus(text, ok) {
     $status.textContent = text;
@@ -104,12 +155,15 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
 
   function syncChars(list) {
     const ids = new Set();
+    let newlyOut = false;
     list.forEach((p) => {
       ids.add(p.id);
       if (!chars.has(p.id)) makeChar(p);
       const c = chars.get(p.id);
+      if (c.p.alive && !p.alive) newlyOut = true;
       c.p = p; c.zone = p.zone || ''; paint(c);
     });
+    if (newlyOut) setTimeout(Sfx.out, 1500);
     chars.forEach((c, id) => { if (!ids.has(id)) { c.el.remove(); chars.delete(id); } });
   }
 
@@ -163,7 +217,7 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
       el.classList.toggle('on', q && count[L] > 0);
       el.classList.toggle('ok', !!r && result.correct === L);
       el.classList.toggle('no', !!r && result.correct !== L);
-      el.querySelector('em').textContent = q && count[L] > 0 ? '👤 ' + count[L] : '';
+      el.querySelector('em').textContent = r ? (result.correct === L ? '✅' : '❌') : (q && count[L] > 0 ? '👤 ' + count[L] : '');
     });
   }
 
@@ -176,7 +230,7 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
       b.innerHTML = '<span class="sicon"></span><span class="sname"></span>';
       b.querySelector('.sicon').textContent = s.icon;
       b.querySelector('.sname').textContent = s.name;
-      b.addEventListener('click', () => { picking = false; socket.emit('subject:select', s.id); ui(); });
+      b.addEventListener('click', () => { Sfx.subject(); picking = false; socket.emit('subject:select', s.id); ui(); });
       $subjects.appendChild(b);
     });
   }
@@ -207,10 +261,12 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
     let text = '';
     if (phase === 'question' && question) text = question.text;
     else if (phase === 'result' && result && question) text = `Doğru cevap: ${result.correct} — ${question.options[result.correct]}`;
+    else if (phase === 'countdown') text = 'HAZIR OL!';
     else if (phase === 'winner') text = 'OYUN BİTTİ';
     $qtext.textContent = text;
     $qtext.className = 'qtext' + (text.length > 110 ? ' xl' : text.length > 60 ? ' long' : '') + (phase === 'result' ? ' good' : '');
     $timer.classList.toggle('hidden', phase !== 'question');
+    $cd.classList.toggle('hidden', phase !== 'countdown');
     startBar();
 
     // Lobi karti
@@ -240,8 +296,8 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
     chars.forEach((c, id) => {
       const r = phase === 'result' && result ? result.per[id] : null;
       c.el.classList.toggle('good', r === 'correct');
-      c.el.classList.toggle('bad', r === 'wrong');
-      c.pop.textContent = r === 'correct' ? '+100' : r === 'wrong' ? '−1 ❤️' : '';
+      c.el.classList.toggle('bad', r === 'wrong' || r === 'none');
+      c.pop.textContent = r === 'correct' ? '+100' : r === 'wrong' ? '−1 ❤️' : r === 'none' ? 'CEVAP YOK −1 ❤️' : '';
       paint(c);
     });
 
@@ -292,17 +348,35 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
   }
 
   setInterval(() => {
+    if (phase === 'countdown') { // 5-4-3-2-1-BASLA! (her sayi ~1 sn)
+      const n = Math.max(1, Math.ceil((deadline - performance.now()) / 1000)) - 1;
+      if (n !== lastCd) {
+        lastCd = n;
+        $cdNum.textContent = n >= 1 ? n : 'BAŞLA!';
+        $cdNum.className = 'cd-num' + (n >= 1 ? '' : ' go');
+        $cdNum.style.animation = 'none'; void $cdNum.offsetWidth; $cdNum.style.animation = '';
+        if (n >= 1) Sfx.cd(); else Sfx.go();
+      }
+      return;
+    }
     if (phase !== 'question') return;
     const t = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
     $timer.textContent = t;
     $timer.classList.toggle('low', t <= 5);
+    if (t !== lastSec) { // her saniyede bir: son 3 sn belirgin bip, 4-10 sn hafif tik
+      lastSec = t;
+      if (t >= 1 && t <= 3) Sfx.last3(); else if (t >= 4 && t <= 10) Sfx.tick(); else if (t === 0) Sfx.timeup();
+    }
     $timer.style.setProperty('--p', Math.max(0, Math.min(100, (deadline - performance.now()) / totalMs * 100)).toFixed(1));
   }, 200);
 
-  $start.addEventListener('click', () => socket.emit('game:start'));
-  $change.addEventListener('click', () => { picking = true; ui(); });
+  const syncSnd = () => { $snd.textContent = Sfx.isOn() ? '🔊 SES AÇIK' : '🔇 SESSİZ'; $snd.classList.toggle('off', !Sfx.isOn()); };
+  syncSnd();
+  $snd.addEventListener('click', () => { Sfx.toggle(); syncSnd(); });
+  $start.addEventListener('click', () => { Sfx.unlock(); Sfx.click(); socket.emit('game:start'); });
+  $change.addEventListener('click', () => { Sfx.click(); picking = true; ui(); });
   $picker.addEventListener('click', (e) => { if (e.target === $picker && subject) { picking = false; ui(); } });
-  $reset.addEventListener('click', () => socket.emit('game:reset'));
+  $reset.addEventListener('click', () => { Sfx.click(); socket.emit('game:reset'); });
 
   socket.on('connect', () => {
     setStatus('● SUNUCU BAĞLI', true);
@@ -324,12 +398,24 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
   socket.on('game:state', (s) => {
     phase = s.phase; question = s.question || null; result = s.result || null; winner = s.winner || null;
     subject = s.subject || null; round = s.round || 0;
+    const prevP = prevPhase, prevR = prevRound;
+    prevPhase = phase; prevRound = round;
+    if (phase === 'countdown') cdSeen = true; else lastCd = -1;
+    if (phase === 'lobby' || phase === 'winner') cdSeen = false;
+    if (phase === 'question' && round !== prevR) { // yeni soru (geri sayim yoksa ilk soruda oyun baslangic sesi de)
+      lastSec = -1;
+      if (round === 1 && !cdSeen) { Sfx.start(); setTimeout(Sfx.question, 650); } else Sfx.question();
+    } else if (phase === 'result' && prevP === 'question' && result) {
+      const v = Object.values(result.per || {});
+      if (v.includes('correct')) { Sfx.correct(); setTimeout(Sfx.score, 300); }
+      if (v.includes('wrong') || v.includes('none')) { setTimeout(Sfx.wrong, v.includes('correct') ? 450 : 0); setTimeout(Sfx.heart, v.includes('correct') ? 800 : 350); }
+    } else if (phase === 'winner' && prevP !== 'winner') Sfx.winner();
     deadline = performance.now() + (s.endsIn || 0);
     if (phase === 'question') totalMs = Math.max(1000, s.endsIn || 15000);
     ui();
   });
   socket.on('player:find', (d) => { if (d) pulse(d.id, 3000); });
-  socket.on('player:joined', (d) => { if (d) setTimeout(() => pulse(d.id, 1800), 150); });
+  socket.on('player:joined', (d) => { if (d) Sfx.join(); if (d) setTimeout(() => pulse(d.id, 1800), 150); });
 
   $panel.addEventListener('click', () => $panel.classList.toggle('big')); // QR'a dokun: buyut/kucult
 

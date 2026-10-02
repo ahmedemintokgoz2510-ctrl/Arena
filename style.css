@@ -38,6 +38,8 @@ h1 { font-size: clamp(28px, 5vw, 52px); }
 @keyframes tick { 50% { transform: translateY(-50%) scale(1.12); } }
 
 /* QR: topbar'da kucuk; dokununca buyur. Lobide ayri buyuk QR var */
+.snd { cursor: pointer; border: 0; border-radius: 2em; padding: .4em 1em; font-size: 1.05em; font-weight: 800; background: #e7f6e8; color: #1f7a3a; box-shadow: 0 .12em 0 var(--edge); flex-shrink: 0; }
+.snd.off { background: #f1f5f9; color: var(--muted); }
 .join-panel { width: 4.4em; height: 4.4em; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .stage[data-phase="lobby"] .join-panel { display: none; }
 .join-panel .join-title, .join-panel .join-sub, .join-panel .join-url { display: none; }
@@ -154,21 +156,26 @@ h1 { font-size: clamp(28px, 5vw, 52px); }
 @keyframes ringp { from { transform: scale(1); } to { transform: scale(1.35); } }
 
 /* Overlay: ders secimi + kazanan */
+.countdown { position: fixed; inset: 0; z-index: 18; display: flex; align-items: center; justify-content: center; pointer-events: none; background: radial-gradient(rgba(29,43,58,.55), rgba(29,43,58,.2)); font-size: calc(min(100vw, 100vh * 16 / 9) / 100); }
+.cd-num { font-size: 18em; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 .04em 0 var(--edge), 0 0 .3em rgba(0,0,0,.35); animation: cdpop .9s cubic-bezier(.2,1.5,.4,1); }
+.cd-num.go { font-size: 11em; color: #fde047; }
+@keyframes cdpop { 0% { transform: scale(2.2); opacity: 0; } 25% { transform: scale(1); opacity: 1; } 85% { transform: scale(.95); opacity: 1; } 100% { transform: scale(.8); opacity: .25; } }
 .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(29,43,58,.55); font-size: calc(min(100vw, 100vh * 16 / 9) / 100); }
 .picker-card { width: 88em; max-width: 96vw; background: var(--bg); border-radius: 1.4em; padding: 1.6em 2em 2.2em; text-align: center; box-shadow: 0 1em 3em rgba(0,0,0,.3); }
 .picker-title { font-size: 3em; font-weight: 900; margin-bottom: .5em; }
-.subjects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.3em; }
-.scard { --c1: #fff; --c2: var(--edge); cursor: pointer; border: 0; border-radius: 1.1em; height: 12em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3em; background: var(--c1); color: var(--ink); box-shadow: 0 .45em 0 var(--c2), 0 1em 1.4em rgba(29,43,58,.15); transition: transform .12s, box-shadow .12s; position: relative; }
+.subjects { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.1em; }
+.scard { --c1: #fff; --c2: var(--edge); cursor: pointer; border: 0; border-radius: 1.1em; height: 10.5em; padding: 0 .4em; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3em; background: var(--c1); color: var(--ink); box-shadow: 0 .45em 0 var(--c2), 0 1em 1.4em rgba(29,43,58,.15); transition: transform .12s, box-shadow .12s; position: relative; }
 .scard:nth-child(1) { --c1: #ffe1e1; --c2: #e8a3a3; } .scard:nth-child(2) { --c1: #dbeafe; --c2: #93b8ee; }
 .scard:nth-child(3) { --c1: #dcfce7; --c2: #8fd3a8; } .scard:nth-child(4) { --c1: #fef3c7; --c2: #e3c36b; }
 .scard:nth-child(5) { --c1: #ede9fe; --c2: #b7a6ea; } .scard:nth-child(6) { --c1: #ccfbf1; --c2: #7fd6c6; }
+.scard:nth-child(9) { --c1: #fce7f3; --c2: #e8a0c8; } .scard:nth-child(10) { --c1: #f1f5f9; --c2: #a8b5c4; }
 .scard:nth-child(7) { --c1: #ffedd5; --c2: #eab27a; } .scard:nth-child(8) { --c1: #e0f2fe; --c2: #86c3e6; }
 .scard:hover { transform: translateY(-.3em); box-shadow: 0 .75em 0 var(--c2), 0 1.4em 1.8em rgba(29,43,58,.18); }
 .scard:active { transform: translateY(.2em); box-shadow: 0 .2em 0 var(--c2); }
 .scard.sel { outline: .28em solid var(--ink); outline-offset: .15em; }
 .scard.sel::after { content: "✓"; position: absolute; top: -.5em; right: -.4em; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--ok); color: #fff; font-weight: 900; font-size: 1.4em; display: flex; align-items: center; justify-content: center; }
-.sicon { font-size: 4em; line-height: 1; }
-.sname { font-size: 1.6em; font-weight: 900; }
+.sicon { font-size: 3.4em; line-height: 1; }
+.sname { font-size: 1.25em; font-weight: 900; line-height: 1.1; text-align: center; }
 .win-card { position: relative; overflow: hidden; background: #fff; border-radius: 1.4em; padding: 1.6em 4em 2em; text-align: center; display: flex; flex-direction: column; gap: .3em; align-items: center; box-shadow: 0 .5em 0 var(--edge); animation: winin .5s cubic-bezier(.3,1.6,.5,1); }
 @keyframes winin { from { transform: scale(.6); opacity: 0; } }
 .trophy { font-size: 6em; line-height: 1; animation: hop .8s ease-in-out infinite alternate; }

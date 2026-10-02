@@ -16,6 +16,7 @@
           <div class="info"><span class="status bad" id="status">● BAĞLANTI BEKLENİYOR</span><span class="counter" id="counter">OYUNCULAR: 0/20</span></div>
         </div>
         <div class="subject-chip hidden" id="subjectChip"></div>
+        <button class="snd" id="sndBtn" type="button">🔊 SES AÇIK</button>
         <div class="join-panel" id="joinPanel">
           <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
           <p class="join-title">TELEFONUNLA QR KODU OKUT</p>
@@ -28,7 +29,7 @@
       <section class="qcard" id="qcard">
         <div class="qmeta" id="qmeta"></div>
         <div class="qtext" id="qtext"></div>
-        <div class="timer hidden" id="timer">15</div>
+        <div class="timer hidden" id="timer">30</div>
         <div class="qbar"><i id="qbar"></i></div>
       </section>
 
@@ -61,6 +62,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Başlangıç geri sayımı (5+ oyuncu) -->
+  <div class="countdown hidden" id="countdown"><div class="cd-num" id="cdNum"></div></div>
 
   <!-- Ders seçimi -->
   <div class="overlay hidden" id="picker">

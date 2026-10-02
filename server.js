@@ -6,6 +6,7 @@ server.js = SUNUCU (bilgisayarda calisir: node server.js)
 - Telefondan sadece joystick girdisi (-1..1) alir; konumu SUNUCU hesaplar ve dogrular.
 - Oyun ekranina (game.html) konumlari Socket.IO ile yayinlar.
 - ASAMA 5: soru, sure, can, puan, elenme, kazanan = hepsi SUNUCUDA hesaplanir (istemciye guvenilmez).
+- ASAMA 7: telefonlara mini harita icin konumlar dusuk sikliktaki 'map:update' ile gonderilir (sadece gosterim).
 - ASAMA 6: secilen ders (selectedSubject) sunucuda tutulur; oyuncunun bulundugu bolge (zone) sunucudan yayinlanir.
 */
 const path = require('path');
@@ -80,6 +81,7 @@ function getPlayerList() {
 let lastTick = Date.now();
 let tickCount = 0;
 let dirty = false;
+let mapDirty = false; // telefon mini haritasi icin
 setInterval(() => {
   const now = Date.now();
   const dt = Math.min((now - lastTick) / 1000, 0.1);
@@ -90,11 +92,16 @@ setInterval(() => {
     if (!canMove(p)) { p.ix = 0; p.iy = 0; } else if (p.ix || p.iy) {
       p.x = clamp(p.x + p.ix * SPEED * dt, 0, WORLD_W);
       p.y = clamp(p.y + p.iy * SPEED * dt, 0, WORLD_H);
-      dirty = true;
+      dirty = true; mapDirty = true;
       const z = zoneOf(p.x, p.y) || ''; // ASAMA 6: bolge degisince telefona haber ver (sadece gosterim)
       if (z !== p.zone) { p.zone = z; io.to(sid).emit('me:zone', z); }
     }
   });
+  if (mapDirty && tickCount % 6 === 0) { // ~10 Hz, sadece telefonlara: [id, x, y, renk, hayatta]
+    mapDirty = false;
+    io.to('players').emit('map:update',
+      Array.from(players.values()).map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, p.alive && !p.waiting ? 1 : 0]));
+  }
   if (dirty && tickCount % 2 === 0) {
     dirty = false;
     io.to('board').emit('state:update',
@@ -103,6 +110,7 @@ setInterval(() => {
 }, 1000 / 60);
 
 function broadcastPlayers() {
+  mapDirty = true;
   io.to('board').emit('players:update', getPlayerList());
 }
 
@@ -199,7 +207,16 @@ const QUESTIONS = [
   { question: 'Güneş hangi yönden doğar?', options: { A: 'Batı', B: 'Kuzey', C: 'Güney', D: 'Doğu' }, correctAnswer: 'D' },
 ];
 
-const game = { subject: null, phase: 'lobby', order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
+// ASAMA 8 HAZIRLIK: her dersin KENDI bagimsiz soru havuzu buraya gelecek, ornek:
+//   QUESTION_BANKS.din = [ { question, options: {A,B,C,D}, correctAnswer }, ... ];
+// Karma da kendi sorularina sahip olacak (diger derslerden cekmez). Havuz yoksa test sorulari kullanilir.
+const QUESTION_BANKS = {};
+function poolFor(subjectId) {
+  const b = QUESTION_BANKS[subjectId];
+  return Array.isArray(b) && b.length ? b : QUESTIONS;
+}
+
+const game = { subject: null, pool: QUESTIONS, used: 0, phase: 'lobby', order: [], round: 0, current: null, endsAt: 0, startCount: 0, timer: null, result: null, winner: null };
 
 function later(ms, fn) { clearTimeout(game.timer); game.timer = setTimeout(fn, ms); }
 function zoneOf(x, y) { return y < ZONE_Y ? null : 'ABCD'[Math.min(3, Math.floor(x / (WORLD_W / 4)))]; }
@@ -237,7 +254,9 @@ function resetToLobby() {
 }
 
 function startGame() {
-  game.order = shuffle(QUESTIONS.map((_, i) => i));
+  game.pool = poolFor(game.subject);
+  game.order = shuffle(game.pool.map((_, i) => i)); // ayni oyunda soru tekrar etmez (havuz bitmedikce)
+  game.used = 0;
   game.round = 0; game.winner = null;
   players.forEach((p) => { p.lives = START_LIVES; p.score = 0; p.alive = true; p.waiting = false; p.last = null; });
   game.startCount = players.size;
@@ -246,7 +265,8 @@ function startGame() {
 }
 
 function nextQuestion() {
-  game.current = QUESTIONS[game.order[game.round % game.order.length]];
+  if (game.used >= game.order.length) { game.order = shuffle(game.pool.map((_, i) => i)); game.used = 0; } // havuz bitti
+  game.current = game.pool[game.order[game.used++]];
   game.round++;
   game.phase = 'question';
   game.result = null;
@@ -343,6 +363,7 @@ io.on('connection', (socket) => {
     };
     if (old) { player.lives = old.lives; player.score = old.score; player.alive = old.alive; player.waiting = old.waiting; player.last = old.last; }
     players.set(socket.id, player);
+    socket.join('players'); // mini harita yayini icin
 
     console.log(`[+] ${player.name} (${player.id}) bağlandı. Toplam: ${players.size}`);
     reply({ ok: true, player: publicPlayer(player) });

@@ -19,11 +19,12 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
   const $start = $('startBtn'), $change = $('changeBtn');
   const $picker = $('picker'), $subjects = $('subjects');
   const $winBox = $('winnerBox'), $winName = $('winName'), $winScore = $('winScore'), $reset = $('resetBtn');
+  const $lb = $('leaderboard'), $conf = $('confetti');
   const labels = Array.from($world.querySelectorAll('.zlabel'));
   const LETTERS = ['A', 'B', 'C', 'D'];
 
   let players = [], phase = 'lobby', question = null, result = null, winner = null, deadline = 0;
-  let subject = null, subjects = [], round = 0, picking = false, barKey = '';
+  let subject = null, subjects = [], round = 0, picking = false, barKey = '', totalMs = 15000, lbKey = '', confettiOn = false;
 
   function setStatus(text, ok) {
     $status.textContent = text;
@@ -37,26 +38,36 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
     return [ww / 2 + (x - WORLD_W / 2) / WORLD_W * ww * sc, f * wh, sc];
   }
 
-  // ---- Zemin (cim seritleri, sinir, A/B/C/D bolgeleri) SVG olarak cizilir ----
+  // ---- Zemin: kalinligi olan arena plakasi + yukseltilmis A/B/C/D platformlari (SVG) ----
   let zonePolys = [];
-  function pts(list) { return list.map(([x, y]) => project(x, y)).map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '); }
+  function PP(x, y, dy) { const p = project(x, y); return [p[0], p[1] + (dy || 0)]; }
+  function poly(list, cls) { return `<polygon class="${cls}" points="${list.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ')}"/>`; }
   function buildFloor() {
+    const T = wh * 0.055, D = wh * 0.05; // plaka ve platform kalinligi (px)
+    const X0 = -60, X1 = WORLD_W + 60, Y0 = -40, Y1 = WORLD_H + 40;
     let h = '';
+    h += poly([PP(X0, Y1, T * 0.6), PP(X1, Y1, T * 0.6), PP(X1, Y1, T * 1.7), PP(X0, Y1, T * 1.7)], 'slabShadow');
+    h += poly([PP(X0, Y1), PP(X1, Y1), PP(X1, Y1, T), PP(X0, Y1, T)], 'slabFront');
+    h += poly([PP(X0, Y0), PP(X1, Y0), PP(X1, Y1), PP(X0, Y1)], 'slabTop');
     for (let i = 0; i < 9; i++) {
-      h += `<polygon class="band ${i % 2 ? 'b1' : 'b0'}" points="${pts([[0, i * 100], [WORLD_W, i * 100], [WORLD_W, (i + 1) * 100], [0, (i + 1) * 100]])}"/>`;
+      h += poly([PP(0, i * 100), PP(WORLD_W, i * 100), PP(WORLD_W, (i + 1) * 100), PP(0, (i + 1) * 100)], 'band ' + (i % 2 ? 'b1' : 'b0'));
     }
     for (let i = 0; i < 4; i++) {
-      const x0 = i * WORLD_W / 4, x1 = (i + 1) * WORLD_W / 4;
-      h += `<polygon class="zp z${LETTERS[i]}" data-z="${LETTERS[i]}" points="${pts([[x0, ZONE_Y], [x1, ZONE_Y], [x1, WORLD_H], [x0, WORLD_H]])}"/>`;
+      const x0 = i * WORLD_W / 4, x1 = (i + 1) * WORLD_W / 4, L = LETTERS[i];
+      h += `<g class="plat p${L}" data-z="${L}">`;
+      h += poly([PP(x0, WORLD_H, D * 0.5), PP(x1, WORLD_H, D * 0.5), PP(x1, WORLD_H, D * 1.5), PP(x0, WORLD_H, D * 1.5)], 'pShadow');
+      h += poly([PP(x0, WORLD_H), PP(x1, WORLD_H), PP(x1, WORLD_H, D), PP(x0, WORLD_H, D)], 'pFront');
+      h += poly([PP(x0, ZONE_Y), PP(x1, ZONE_Y), PP(x1, WORLD_H), PP(x0, WORLD_H)], 'pTop');
+      h += poly([PP(x0 + 14, ZONE_Y + 24), PP(x1 - 14, ZONE_Y + 24), PP(x1 - 14, WORLD_H - 20), PP(x0 + 14, WORLD_H - 20)], 'pInner');
+      h += '</g>';
     }
-    h += `<polygon class="edge" points="${pts([[0, 0], [WORLD_W, 0], [WORLD_W, WORLD_H], [0, WORLD_H]])}"/>`;
     $floor.setAttribute('viewBox', `0 0 ${ww} ${wh}`);
     $floor.innerHTML = h;
-    zonePolys = Array.from($floor.querySelectorAll('.zp'));
+    zonePolys = Array.from($floor.querySelectorAll('.plat'));
     labels.forEach((el, i) => {
       const [lx0, ly] = project(i * WORLD_W / 4, ZONE_Y), [lx1] = project((i + 1) * WORLD_W / 4, ZONE_Y);
       el.style.left = lx0 + 'px'; el.style.width = (lx1 - lx0) + 'px';
-      el.style.top = ly + 'px'; el.style.height = (project(0, ZONE_Y + 220)[1] - ly) + 'px';
+      el.style.top = ly + 'px'; el.style.height = (project(0, ZONE_Y + 240)[1] - ly) + 'px';
     });
   }
 
@@ -75,19 +86,19 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
     const el = document.createElement('div');
     el.className = 'char';
     el.style.setProperty('--c', p.color);
-    el.innerHTML = '<u class="ring"></u><u class="shadow"></u><i class="leg l"></i><i class="leg r"></i><i class="torso"></i>' +
-      '<i class="arm l"></i><i class="arm r"></i><i class="head"></i><span class="tag"></span><em class="pop"></em>';
+    el.innerHTML = '<u class="shadow"></u><u class="ring"></u><div class="body"><i class="leg l"></i><i class="leg r"></i><i class="torso"></i>' +
+      '<i class="arm l"></i><i class="arm r"></i><i class="head"></i></div><span class="tag"></span><em class="pop"></em>';
     $world.appendChild(el);
     chars.set(p.id, { el, tag: el.querySelector('.tag'), pop: el.querySelector('.pop'), p, x: p.x, y: p.y, tx: p.x, ty: p.y, zone: p.zone || '', dirty: true, walking: false, moveT: 0, z: -1 });
   }
 
   function paint(c) {
     const p = c.p;
-    c.el.classList.toggle('out', !p.alive || p.waiting);
-    let t = p.name;
+    c.el.classList.toggle('gone', !p.alive);
+    c.el.classList.toggle('wait', p.alive && p.waiting);
+    let t = p.name; // her karakterin ustunde ismi yazar
     if (!p.alive) t += ' · ELENDİ';
     else if (p.waiting) t += ' · bekliyor';
-    else if (phase !== 'lobby') t += ' · ' + p.score;
     if (c.tag.textContent !== t) c.tag.textContent = t;
   }
 
@@ -135,7 +146,11 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
   // ---- Bolge vurgulari (sadece gosterim; sunucudan gelen bolge bilgisi) ----
   function zoneState() {
     const count = { A: 0, B: 0, C: 0, D: 0 };
-    chars.forEach((c) => { if (c.zone && c.p.alive && !c.p.waiting) count[c.zone]++; });
+    chars.forEach((c) => {
+      const inZ = !!c.zone && c.p.alive && !c.p.waiting;
+      if (inZ) count[c.zone]++;
+      c.el.classList.toggle('inz', inZ && phase === 'question'); // platformdayken kollar havada
+    });
     const q = phase === 'question', r = phase === 'result' && result;
     zonePolys.forEach((z) => {
       const L = z.dataset.z;
@@ -238,7 +253,38 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
       sp.className = t.length > 40 ? 'xl' : t.length > 18 ? 'long' : '';
     });
 
+    // Siralama (ilk 3) - yalnizca oyun sirasinda
+    const showLb = phase === 'question' || phase === 'result';
+    $lb.classList.toggle('hidden', !showLb);
+    if (showLb) {
+      const top = players.filter((p) => !p.waiting).sort((a, b) => (b.alive - a.alive) || b.score - a.score || b.lives - a.lives).slice(0, 3);
+      const k = top.map((p) => p.name + p.score + p.lives).join('|');
+      if (k !== lbKey) {
+        lbKey = k;
+        $lb.innerHTML = '<b>SIRALAMA</b>';
+        top.forEach((p, i) => {
+          const r = document.createElement('div');
+          r.className = 'lbrow'; r.style.setProperty('--c', p.color);
+          r.textContent = `${i + 1}. ${p.name} · ${p.score} · ` + (p.alive ? '❤️'.repeat(Math.max(0, p.lives)) : '✖');
+          $lb.appendChild(r);
+        });
+      }
+    }
+
     $winBox.classList.toggle('hidden', !(phase === 'winner' && winner));
+    if (phase === 'winner' && winner && !confettiOn) {
+      confettiOn = true;
+      const cols = ['#f87171', '#60a5fa', '#fbbf24', '#c084fc', '#34d399'];
+      $conf.innerHTML = '';
+      for (let i = 0; i < 28; i++) {
+        const c = document.createElement('i');
+        c.style.left = (Math.random() * 100).toFixed(1) + '%';
+        c.style.background = cols[i % cols.length];
+        c.style.animationDelay = (Math.random() * 1.5).toFixed(2) + 's';
+        c.style.animationDuration = (2.2 + Math.random() * 1.6).toFixed(2) + 's';
+        $conf.appendChild(c);
+      }
+    } else if (phase !== 'winner') { confettiOn = false; }
     if (phase === 'winner' && winner) {
       $winName.textContent = winner.names.join(' & ');
       $winScore.textContent = 'Puan: ' + winner.score;
@@ -250,6 +296,7 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
     const t = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
     $timer.textContent = t;
     $timer.classList.toggle('low', t <= 5);
+    $timer.style.setProperty('--p', Math.max(0, Math.min(100, (deadline - performance.now()) / totalMs * 100)).toFixed(1));
   }, 200);
 
   $start.addEventListener('click', () => socket.emit('game:start'));
@@ -278,6 +325,7 @@ game.js = OYUN EKRANI MANTIGI (game.html icin; bilgisayar / akilli tahta)
     phase = s.phase; question = s.question || null; result = s.result || null; winner = s.winner || null;
     subject = s.subject || null; round = s.round || 0;
     deadline = performance.now() + (s.endsIn || 0);
+    if (phase === 'question') totalMs = Math.max(1000, s.endsIn || 15000);
     ui();
   });
   socket.on('player:find', (d) => { if (d) pulse(d.id, 3000); });

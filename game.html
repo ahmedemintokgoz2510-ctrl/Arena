@@ -16,7 +16,6 @@
           <div class="info"><span class="status bad" id="status">● BAĞLANTI BEKLENİYOR</span><span class="counter" id="counter">OYUNCULAR: 0/20</span></div>
         </div>
         <div class="subject-chip hidden" id="subjectChip"></div>
-        <div class="timer hidden" id="timer">15</div>
         <div class="join-panel" id="joinPanel">
           <div class="qr-box" id="qrBox" aria-label="Katılım QR kodu"></div>
           <p class="join-title">TELEFONUNLA QR KODU OKUT</p>
@@ -29,6 +28,7 @@
       <section class="qcard" id="qcard">
         <div class="qmeta" id="qmeta"></div>
         <div class="qtext" id="qtext"></div>
+        <div class="timer hidden" id="timer">15</div>
         <div class="qbar"><i id="qbar"></i></div>
       </section>
 
@@ -50,6 +50,7 @@
       </section>
 
       <div class="arena" id="field">
+        <div class="leaderboard hidden" id="leaderboard"></div>
         <div class="world" id="world">
           <svg class="floor" id="floor" aria-hidden="true"></svg>
           <div class="zlabel a" data-z="A"><b>A</b><span></span><em></em></div>
@@ -71,7 +72,9 @@
 
   <div class="overlay hidden" id="winnerBox">
     <div class="win-card">
-      <div class="win-title">🏆 KAZANAN</div>
+      <div class="confetti" id="confetti"></div>
+      <div class="trophy">🏆</div>
+      <div class="win-title">KAZANAN</div>
       <div class="win-name" id="winName"></div>
       <div class="win-score" id="winScore"></div>
       <button class="btn" id="resetBtn">YENİ OYUN</button>
